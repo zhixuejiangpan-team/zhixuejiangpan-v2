@@ -21,7 +21,13 @@ export async function onRequestPost(context) {
     'Access-Control-Allow-Headers': 'Content-Type, X-App-Key'
   };
   if (!env.APP_SECRET || request.headers.get('X-App-Key') !== env.APP_SECRET) {
-    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+    /* 临时诊断（排查后删除） */
+    return new Response(JSON.stringify({
+      error: 'unauthorized',
+      hasEnv: !!env.APP_SECRET,
+      gotLen: (request.headers.get('X-App-Key') || '').length,
+      wantLen: env.APP_SECRET ? env.APP_SECRET.length : -1
+    }), {
       status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }

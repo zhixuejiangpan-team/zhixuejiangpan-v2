@@ -620,6 +620,7 @@
     /* Loca 2.0：全局唯一 Container 仅挂主地图（孪生四小地图不挂 Loca） */
     var loca = null, locaReady = false, bands = {}, linkLayer = null;
     var bandTextures = {}, bandTimer = null, mapActive = false;
+    var buildingsLayer = null, relLines = [], hoverChain = null, relTipEl = null, lastRelDraw = 0;
     var linkOn = load('zxsj66_linklayer_on', true);
     var bandColors = { green: cssVar('--twin-green', '#12A36B'), yellow: cssVar('--twin-yellow', '#FFB000'), red: cssVar('--twin-red', '#FF3B5C') };
 
@@ -630,7 +631,9 @@
         return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
       } catch (e) { return 'rgba(200,200,200,' + a + ')'; }
     }
-    /* 呼吸帧序列纹理：32 帧 128×128（与官方 breath_* 图同规格 4096×128） */
+    /* 呼吸帧序列纹理：32 帧 128×128（与官方 breath_* 图同规格 4096×128）
+       设计：慢速荧光扩散——核心微弱呼吸 + 光环由内向外扩散淡出（雷达涟漪），
+       避免高频闪烁。周期由 setStyle 的 duration 控制（约 1.3–2.9 秒/圈）。 */
     function breathTexture(hex) {
       var FRAMES = 32, CELL = 128;
       try {
@@ -638,15 +641,26 @@
         c.width = CELL * FRAMES; c.height = CELL;
         var ctx = c.getContext('2d');
         for (var f = 0; f < FRAMES; f++) {
-          var t = f / FRAMES * Math.PI * 2;
-          var r = CELL * (0.2 + 0.3 * (0.5 + 0.5 * Math.sin(t)));
+          var t = f / FRAMES;
           var cx = f * CELL + CELL / 2, cy = CELL / 2;
-          var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-          g.addColorStop(0, 'rgba(255,255,255,0.95)');
-          g.addColorStop(0.4, hexToRgba(hex, 0.9));
-          g.addColorStop(1, hexToRgba(hex, 0));
-          ctx.fillStyle = g;
-          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+          /* 扩散光环：随周期向外扩散并淡出 */
+          var haloR = CELL * (0.18 + 0.52 * Math.pow(t, 0.9));
+          var haloA = 0.42 * Math.pow(1 - t, 1.3) + 0.05;
+          var hg = ctx.createRadialGradient(cx, cy, haloR * 0.45, cx, cy, haloR);
+          hg.addColorStop(0, hexToRgba(hex, 0));
+          hg.addColorStop(0.72, hexToRgba(hex, haloA));
+          hg.addColorStop(1, hexToRgba(hex, 0));
+          ctx.fillStyle = hg;
+          ctx.beginPath(); ctx.arc(cx, cy, haloR, 0, Math.PI * 2); ctx.fill();
+          /* 核心微弱呼吸（不抢视觉，避免闪烁感） */
+          var ph = Math.sin(t * Math.PI * 2);
+          var coreR = CELL * (0.15 + 0.045 * (0.5 + 0.5 * ph));
+          var cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+          cg.addColorStop(0, 'rgba(255,255,255,0.85)');
+          cg.addColorStop(0.55, hexToRgba(hex, 0.7));
+          cg.addColorStop(1, hexToRgba(hex, 0));
+          ctx.fillStyle = cg;
+          ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, Math.PI * 2); ctx.fill();
         }
         return c.toDataURL('image/png');
       } catch (e) { return null; }
@@ -677,11 +691,23 @@
           groups[b].forEach(function (sp) { sum += window.ZXSJ.DataSource.getCrowd(sp.id, nowMin).level; });
           mean = sum / groups[b].length;
         }
-        var freq = 0.5 + Math.min(1, mean / 100) * 1.0;   /* 0.5Hz（空）→ 1.5Hz（满） */
+        var freq = 0.35 + Math.min(1, mean / 100) * 0.45;   /* 慢速：0.35Hz（空）→ 0.8Hz（满），周期 1.25–2.9 秒 */
         var style = { unit: 'px', size: [58, 58], color: bandColors[b], altitude: 0, borderWidth: 0 };
         if (bandTextures[b]) { style.texture = bandTextures[b]; style.animate = true; style.duration = Math.round(1000 / freq); }
         try { bands[b].setStyle(style); } catch (e) { try { console.warn('[loca] 呼吸点样式失败：', e); } catch (err) {} }
       });
+    }
+    /* LinkLayer 样式（hoverChain 高亮某条事务链：加宽 + 变白 + 提速） */
+    function linkStyle(hoverId) {
+      return {
+        unit: 'meter',
+        width: function (index, feature) { return (hoverId && feature.properties.id === hoverId) ? 30 : 20; },
+        altitude: 0, borderWidth: 0,
+        color: function (index, feature) { return (hoverId && feature.properties.id === hoverId) ? '#FFFFFF' : feature.properties.color; },
+        lineType: 'dash', dash: [3, 1.4],
+        intervalColors: ['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.8)'],
+        speed: 620
+      };
     }
     /* LinkLayer 六条事务链（data.js LINK_EDGES，逐条着色 + 流动虚线） */
     function buildLinkLayer() {
@@ -698,13 +724,7 @@
         linkLayer.setSource(new Loca.GeoJSONSource({ data: { type: 'FeatureCollection', features: feats } }));
         var ok = false;
         try {
-          linkLayer.setStyle({
-            unit: 'meter', width: 22, altitude: 0, borderWidth: 0,
-            color: function (index, feature) { return feature.properties.color; },
-            lineType: 'dash', dash: [3, 1.4],
-            intervalColors: ['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.95)'],
-            speed: 1600
-          });
+          linkLayer.setStyle(linkStyle(null));
           ok = true;
         } catch (e1) {
           try {
@@ -712,15 +732,53 @@
             ok = true;
           } catch (e2) { ok = false; }
         }
-        if (ok) loca.add(linkLayer);
-        else { linkLayer = null; }
+        if (ok) {
+          loca.add(linkLayer);
+          /* 互动：点击事务链 → 提示 + 视野框住整条链 */
+          try {
+            linkLayer.on('click', function (arg1, arg2) {
+              var f = (arg1 && arg1.properties) ? arg1 : (arg2 && arg2.feature);
+              if (!f || !f.properties || !f.properties.id) return;
+              var edge = null;
+              (window.LINK_EDGES || []).forEach(function (e) { if (e.id === f.properties.id) edge = e; });
+              if (!edge) return;
+              toast('事务链 · ' + edge.label + '：' + edge.path.length + ' 个关联点位');
+              var coords = [];
+              edge.path.forEach(function (id) { var sp = findSpot(id); if (sp) coords.push([sp.lng, sp.lat]); });
+              if (coords.length >= 2) { try { map.setFitView(coords, false, [60, 60, 240, 60]); } catch (e) {} }
+            });
+          } catch (e) {}
+        } else { linkLayer = null; }
       } catch (e) { try { console.warn('[loca] 事务链图层失败：', e); } catch (err) {} linkLayer = null; }
     }
     function renderLinkLegend() {
       var el = document.getElementById('linkLegend');
       if (!el || !window.LINK_EDGES) return;
-      el.innerHTML = '<span class="ll-title">六条事务链</span>' + window.LINK_EDGES.map(function (e2) { return '<span><i style="background:' + e2.color + '"></i>' + esc(e2.label) + '</span>'; }).join('');
+      el.innerHTML = '<span class="ll-title">六条事务链</span>' + window.LINK_EDGES.map(function (e2) { return '<span class="ll-item" data-edge="' + e2.id + '"><i style="background:' + e2.color + '"></i>' + esc(e2.label) + '</span>'; }).join('');
       el.hidden = !linkOn;
+      if (!el.__llBound) {
+        el.__llBound = 1;
+        el.addEventListener('mouseover', function (e) {
+          var it = e.target.closest('.ll-item'); if (!it) return;
+          hoverChain = it.getAttribute('data-edge');
+          if (linkLayer) { try { linkLayer.setStyle(linkStyle(hoverChain)); } catch (err) {} }
+        });
+        el.addEventListener('mouseout', function () {
+          if (!hoverChain) return;
+          hoverChain = null;
+          if (linkLayer) { try { linkLayer.setStyle(linkStyle(null)); } catch (err) {} }
+        });
+        el.addEventListener('click', function (e) {
+          var it = e.target.closest('.ll-item'); if (!it) return;
+          var edge = null;
+          (window.LINK_EDGES || []).forEach(function (e2) { if (e2.id === it.getAttribute('data-edge')) edge = e2; });
+          if (!edge) return;
+          toast('事务链 · ' + edge.label);
+          var coords = [];
+          edge.path.forEach(function (id) { var sp = findSpot(id); if (sp) coords.push([sp.lng, sp.lat]); });
+          if (coords.length >= 2 && map) { try { map.setFitView(coords, false, [60, 60, 240, 60]); } catch (err) {} }
+        });
+      }
     }
     function bindLinkToggle() {
       var cb = document.getElementById('linkLayerCb');
@@ -769,18 +827,19 @@
       if (seen) return;
       if (!loca || !loca.viewControl || RM) return;   /* 不能播则不消耗开场（下次进入再试） */
       try { localStorage.setItem('zxsj66_mapintro', '1'); } catch (e) {}
+      /* 三段式 900ms：俯冲（pitch 50→64）→ 旋转扫视（-15→6）→ 落定回 2.5D 常驻视角（50°/-15°） */
       var full = [
-        { zoom: { value: 16.6, control: [[0, 12.8], [1, 16.6]], timing: [0, 0, 0.7, 1], duration: 300 },
-          pitch: { value: 55, control: [[0, 0], [1, 55]], timing: [0, 0, 0.7, 1], duration: 300 } },
-        { rotation: { value: 18, control: [[0, 0], [1, 18]], timing: [0, 0, 1, 1], duration: 300 } },
-        { pitch: { value: 0, control: [[0, 55], [1, 0]], timing: [0.3, 0, 0.4, 1], duration: 300 },
-          rotation: { value: 0, control: [[0, 18], [1, 0]], timing: [0.3, 0, 0.4, 1], duration: 300 },
-          zoom: { value: 16, control: [[0, 16.6], [1, 16]], timing: [0.3, 0, 0.4, 1], duration: 300 } }
+        { zoom: { value: 16.8, control: [[0, 12.8], [1, 16.8]], timing: [0, 0, 0.7, 1], duration: 300 },
+          pitch: { value: 64, control: [[0, 50], [1, 64]], timing: [0, 0, 0.7, 1], duration: 300 } },
+        { rotation: { value: 6, control: [[0, -15], [1, 6]], timing: [0, 0, 1, 1], duration: 300 } },
+        { pitch: { value: 50, control: [[0, 64], [1, 50]], timing: [0.3, 0, 0.4, 1], duration: 300 },
+          rotation: { value: -15, control: [[0, 6], [1, -15]], timing: [0.3, 0, 0.4, 1], duration: 300 },
+          zoom: { value: 16.5, control: [[0, 16.8], [1, 16.5]], timing: [0.3, 0, 0.4, 1], duration: 300 } }
       ];
       var simple = [
-        { zoom: { value: 16.5, duration: 300 }, pitch: { value: 55, duration: 300 } },
-        { rotation: { value: 18, duration: 300 } },
-        { zoom: { value: 16, duration: 300 }, pitch: { value: 0, duration: 300 }, rotation: { value: 0, duration: 300 } }
+        { zoom: { value: 16.7, duration: 300 }, pitch: { value: 64, duration: 300 } },
+        { rotation: { value: 6, duration: 300 } },
+        { zoom: { value: 16.5, duration: 300 }, pitch: { value: 50, duration: 300 }, rotation: { value: -15, duration: 300 } }
       ];
       try { loca.viewControl.addAnimates(full, function () {}); }
       catch (e) { try { loca.viewControl.addAnimates(simple, function () {}); } catch (e2) {} }
@@ -791,6 +850,23 @@
     }
     window.addEventListener('zxsj66:import-data', function () { if (locaReady) refreshBands(); });
 
+    /* 楼块 2.0（AMap.Buildings）：真三维建筑体量，随主题换色（涂鸦适配） */
+    function buildingsColors() {
+      var t = document.documentElement.getAttribute('data-theme') || 'doodle';
+      if (t === 'neon') return { wall: 'rgba(24,52,94,0.94)', roof: 'rgba(34,68,118,0.96)' };
+      if (t === 'draft') return { wall: 'rgba(212,212,204,0.95)', roof: 'rgba(234,234,226,0.95)' };
+      return { wall: 'rgba(244,234,215,0.95)', roof: 'rgba(255,233,181,0.96)' };
+    }
+    function initBuildings() {
+      try {
+        if (typeof AMap.Buildings === 'undefined' || !map) return;
+        if (buildingsLayer) { try { map.remove(buildingsLayer); } catch (e) {} buildingsLayer = null; }
+        var c = buildingsColors();
+        buildingsLayer = new AMap.Buildings({ zooms: [14, 20], heightFactor: 2.0, wallColor: c.wall, roofColor: c.roof, zIndex: 5, opacity: 0.96 });
+        map.add(buildingsLayer);
+      } catch (e) { try { console.warn('[buildings] 楼块图层失败（回退内置楼块）：', e); } catch (err) {} }
+    }
+
     function enter() {
       if (inited) return;
       var box = document.getElementById('mapBox');
@@ -798,10 +874,21 @@
         box.innerHTML = '<div class="map-placeholder"><h3>地图占位提示</h3><p>高德 Key 未配置或加载失败。请由团队申请「Web端(JS API)」Key 后填入 index.html，并将 <b>zhixuejiangpan-team.github.io</b> 主域名加入白名单。</p></div>';
         inited = true; return;
       }
-      try { map = new AMap.Map('mapBox', { center: CAMPUS_CENTER['蛟桥园'], zoom: 16, viewMode: '3D', pitch: 0, scrollWheel: false, zoomEnable: true }); map.addControl(new AMap.Scale()); }
+      /* 参考示例 map3d.html：3D 视图 + 俯仰 50° + 旋转 -15°，可旋转可俯仰 */
+      try {
+        map = new AMap.Map('mapBox', { center: CAMPUS_CENTER['蛟桥园'], zoom: 16.5, viewMode: '3D', pitch: 50, rotation: -15, rotateEnable: true, pitchEnable: true, zooms: [3, 20], showBuildingBlock: true, buildingAnimation: false, scrollWheel: false, zoomEnable: true });
+        map.addControl(new AMap.Scale());
+        try {
+          var cb = new AMap.ControlBar({ position: { right: '12px', top: '12px' } }); cb.addTo(map);
+          var tb = new AMap.ToolBar({ position: { right: '12px', top: '132px' } }); tb.addTo(map);
+        } catch (e) {}
+      }
       catch (e) { box.innerHTML = '<div class="map-placeholder"><h3>地图初始化失败</h3><p>' + esc(e.message) + '</p></div>'; inited = true; return; }
       inited = true;
+      /* 点击空白处：清除关联建筑互动线（400ms 防抖，避免与点位点击事件冲突） */
+      map.on('click', function () { if (Date.now() - lastRelDraw > 400) clearRelLines(); });
       syncMapTheme();
+      initBuildings();
       initLoca();
       renderMarkers(); buildDrawer();
       if (locaReady) playMapIntro();
@@ -838,11 +925,12 @@
         }, 100);
       } else if (!on && gestureTimer) { clearInterval(gestureTimer); gestureTimer = null; }
     }
-    /* 主题联动：霓虹主题主地图套用高德深色样式，其余主题用标准样式 */
+    /* 主题联动：霓虹主题主地图套用高德深色样式，其余主题用标准样式；楼块随主题换色 */
     function syncMapTheme() {
       if (!map) return;
       var dark = document.documentElement.getAttribute('data-theme') === 'neon';
       try { map.setMapStyle(dark ? 'amap://styles/dark' : 'amap://styles/normal'); } catch (e) {}
+      initBuildings();
     }
     function markerOf(sp) {
       var color = TYPE_COLOR[sp.type] || '#7A6A55';
@@ -874,6 +962,85 @@
       var html = '<div class="pop-title">' + esc(sp.name) + '</div><div class="pop-meta">📍 ' + esc(sp.campus) + ' · ' + esc(sp.type) + ' · ⭐' + sp.rating.toFixed(1) + '</div><div class="pop-tags">' + sp.tags.map(function (t) { return '<span class="pop-tag">' + esc(t) + '</span>'; }).join('') + '</div>' +
         '<button class="pop-vote' + (voted ? ' voted' : '') + '" data-voteid="' + sp.id + '">' + (voted ? '已支持(' + getVotes(sp.id) + ')' : '👍 支持(' + getVotes(sp.id) + ')') + '</button>';
       new AMap.InfoWindow({ content: html, offset: new AMap.Pixel(0, -10) }).open(map, [sp.lng, sp.lat]);
+      drawRelatedLines(sp);   /* 关联建筑互动线条：点击点位即连出关联线 */
+    }
+    /* ---------- 关联建筑互动线条（涂鸦虚线 + 悬停高亮 + 点击提示） ---------- */
+    function clearRelLines() {
+      relLines.forEach(function (l) { try { l.poly.setMap(null); } catch (e) {} });
+      relLines = [];
+      if (relTipEl) relTipEl.hidden = true;
+    }
+    function relTipElEnsure() {
+      if (relTipEl) return relTipEl;
+      relTipEl = document.createElement('div');
+      relTipEl.className = 'twin-tip';
+      relTipEl.hidden = true;
+      document.body.appendChild(relTipEl);
+      return relTipEl;
+    }
+    function spotNeighbors(sp) {
+      var nb = {};
+      (window.LINK_EDGES || []).forEach(function (edge) {
+        var idx = edge.path.indexOf(sp.id);
+        if (idx === -1) return;
+        if (idx > 0) nb[edge.path[idx - 1]] = edge;
+        if (idx < edge.path.length - 1) nb[edge.path[idx + 1]] = edge;
+      });
+      (workflows || []).forEach(function (wf) {
+        if (!wf.relatedSpotIds || wf.relatedSpotIds.indexOf(sp.id) === -1) return;
+        wf.relatedSpotIds.forEach(function (rid) {
+          if (rid !== sp.id && !nb[rid]) nb[rid] = { id: 'wf-' + wf.id, label: wf.title, color: '#8A6FD1' };
+        });
+      });
+      return nb;
+    }
+    function drawRelatedLines(sp) {
+      clearRelLines();
+      lastRelDraw = Date.now();
+      var nb = spotNeighbors(sp);
+      Object.keys(nb).forEach(function (nid) {
+        var nsp = findSpot(nid); if (!nsp) return;
+        var edge = nb[nid];
+        try {
+          var poly = new AMap.Polyline({
+            path: [[sp.lng, sp.lat], [nsp.lng, nsp.lat]],
+            strokeColor: edge.color || '#FFB000',
+            strokeWeight: 4,
+            strokeStyle: 'dashed',
+            strokeDasharray: [10, 8],
+            strokeOpacity: 0.95,
+            lineJoin: 'round', lineCap: 'round',
+            showDir: true,
+            zIndex: 132,
+            bubble: true
+          });
+          poly.setMap(map);
+          try {
+            poly.on('mouseover', function (ev) {
+              poly.setOptions({ strokeWeight: 8, strokeOpacity: 1 });
+              var tip = relTipElEnsure();
+              tip.textContent = edge.label + ' · ' + sp.name + ' ↔ ' + nsp.name;
+              tip.hidden = false;
+              var x = innerWidth / 2, y = innerHeight / 2;
+              try {
+                var origin = ev && ev.originEvent;
+                if (origin && origin.clientX) { x = origin.clientX; y = origin.clientY; }
+                else if (ev && ev.lnglat && map.lngLatToContainer) {
+                  var box = document.getElementById('mapBox').getBoundingClientRect();
+                  var c = map.lngLatToContainer(ev.lnglat);
+                  x = box.left + c.x; y = box.top + c.y;
+                }
+              } catch (e2) {}
+              tip.style.left = Math.min(x + 14, innerWidth - 220) + 'px';
+              tip.style.top = Math.max(8, y - 42) + 'px';
+            });
+            poly.on('mouseout', function () { poly.setOptions({ strokeWeight: 4, strokeOpacity: 0.95 }); if (relTipEl) relTipEl.hidden = true; });
+            poly.on('click', function () { toast(edge.label + '：' + sp.name + ' ↔ ' + nsp.name); });
+          } catch (e) {}
+          relLines.push({ poly: poly, edge: edge, a: sp, b: nsp });
+        } catch (e) {}
+      });
+      return relLines.length;
     }
     document.addEventListener('click', function (e) {
       var btn = e.target.closest ? e.target.closest('.pop-vote') : null; if (!btn) return;
@@ -1155,7 +1322,7 @@
       if (!cfg || typeof AMap === 'undefined' || !box) { card.classList.add('no-map'); return null; }
       var map;
       try {
-        map = new AMap.Map(box, { center: cfg.center, zoom: cfg.zoom, viewMode: '2D', dragEnable: false, zoomEnable: false, doubleClickZoom: false, scrollWheel: false, touchZoom: false, keyboardEnable: false, resizeEnable: false, rotateEnable: false, pitchEnable: false, mapStyle: 'amap://styles/dark', features: LOWEND ? ['bg', 'road'] : ['bg', 'road', 'building'] });
+        map = new AMap.Map(box, { center: cfg.center, zoom: cfg.zoom, viewMode: '3D', pitch: 40, showBuildingBlock: true, buildingAnimation: false, dragEnable: false, zoomEnable: false, doubleClickZoom: false, scrollWheel: false, touchZoom: false, keyboardEnable: false, resizeEnable: false, rotateEnable: false, pitchEnable: false, mapStyle: 'amap://styles/dark', features: LOWEND ? ['bg', 'road'] : ['bg', 'road', 'building'] });
       } catch (e) { card.classList.add('no-map'); return null; }
       var cs = { card: card, q: q, map: map, refs: [], dead: false, hideTimer: null };
       rows.filter(function (r) { return quadrant(r.sp) === q; }).forEach(function (r) {
