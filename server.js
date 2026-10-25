@@ -1,9 +1,10 @@
-/* 智行江畔 V6.6+AI —— Kimi(Moonshot) API 本地跨域代理（<30行核心代码）
- * 用法：node server.js  →  监听 3001 端口
+/* 智行江畔 V9.0 —— DeepSeek API 本地跨域代理（<30行核心代码）
+ * 用法：DEEPSEEK_KEY=你的key node server.js  →  监听 3001 端口
  * 前端把 AI_CONFIG.PROXY_URL 填为 http://localhost:3001/ai
- * 严禁前端直连 api.moonshot.cn（会被 CORS 拦截且暴露 Key）。 */
+ * 严禁前端直连 api.deepseek.com（暴露 Key）。
+ * DeepSeek 接口为 OpenAI chat/completions 兼容格式，请求体原样透传即可。 */
 const http = require('http');
-const KEY = process.env.MOONSHOT_KEY;
+const KEY = process.env.DEEPSEEK_KEY;
 
 http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -16,7 +17,7 @@ http.createServer((req, res) => {
   req.on('end', async () => {
     try {
       console.log('[proxy] 收到请求', new Date().toLocaleTimeString(), body.slice(0, 80));
-      const up = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+      const up = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + KEY },
         body

@@ -285,3 +285,55 @@ window.studyResources = [
 ];
 
 /* ---------- 高频问题增补：无（已合并到上面数组中） ---------- */
+
+/* ---------- V7.3 学校正式文件热更新（模块零-4） ----------
+   docUrl：学校正式文件链接（https）；docUpdateTime：ISO 日期。
+   docUpdateTime 晚于 localStorage 'zxsj66_doc_seen_<id>' 时，点位名称旁显示未读红点。
+   运行时更新走 ZXSJ.updateSchoolDocs(spotId, url, isoTime)（含 https/ISO 校验）。 */
+window.SPOT_DOCS = {
+  'jq_xyy':  { docUrl: 'https://www.jxufe.edu.cn/', docUpdateTime: '2026-10-10' },   /* 住院报销材料通知 */
+  'jq_dshd': { docUrl: 'https://www.jxufe.edu.cn/', docUpdateTime: '2026-10-12' },   /* 学生证补办受理通知 */
+  'jq_nqbg': { docUrl: 'https://www.jxufe.edu.cn/', docUpdateTime: '2026-09-28' },   /* 教务处考试安排通知 */
+  'jq_tw':   { docUrl: 'https://www.jxufe.edu.cn/', docUpdateTime: '2026-10-08' },   /* 图文楼开放时间调整 */
+  'ml_dshd': { docUrl: 'https://www.jxufe.edu.cn/', docUpdateTime: '2026-10-09' }    /* 麦庐医保材料受理安排 */
+};
+
+/* ---------- V7.3 楼层信息（模块二-3 剖面查看器数据源，无数据的点位显示"楼层信息待补充"） ---------- */
+window.SPOT_FLOORS = {
+  'jq_tw':  ['1F 总服务台 / 自助打印区', '2F 社科借阅区', '3F 自科借阅区', '4F 自习区（考试周加开）'],
+  'jq_xyy': ['1F 门诊 / 医保办', '2F 检验科 / 观察室', '3F 健康管理中心'],
+  'ml_yst': ['1F 大众餐窗口', '2F 风味窗口 / 清真窗口'],
+  'ml_est': ['1F 大众餐 / 面点', '2F 特色档口'],
+  'ml_bqst':['1F 大众餐', '2F 清真窗口 / 教工餐'],
+  'jq_nqst':['1F 早餐（全校区最丰富）', '2F 午晚餐窗口'],
+  'jq_bqst':['1F 午市窗口', '2F 风味餐厅'],
+  'ml_tyg': ['1F 篮球馆 / 羽毛球馆', '2F 健身房 / 舞蹈房']
+};
+
+/* 注入到点位对象（spot.docUrl / docUpdateTime / floors 可被任意模块直接读取） */
+(function () {
+  spots.forEach(function (s) {
+    var d = window.SPOT_DOCS[s.id];
+    if (d) { s.docUrl = d.docUrl; s.docUpdateTime = d.docUpdateTime; }
+    var f = window.SPOT_FLOORS[s.id];
+    if (f) s.floors = f;
+  });
+})();
+
+/* ============================================================
+   V9.0 Loca LinkLayer 六条事务链（主地图连线数据源）
+   医保 / 教务 / 学生证 / 奖助 / 报修 / 运动联动。
+   全部引用现有 64 点位 id（不可断链，勿改 id）；
+   体育类点位以蛟桥/麦庐现有 6 个体育点位补齐联动：
+   jq_yy 游泳馆 / jq_tyg 蛟桥体育馆 / jq_ydc 北区运动场 /
+   ml_tyxy 体经中心 / ml_tyg 麦庐体育馆 / ml_ydc 麦庐运动场。
+   color 供 LinkLayer 逐条着色，label 供图例展示。
+   ============================================================ */
+window.LINK_EDGES = [
+  { id: 'lk-medical',  label: '医保报销',   color: '#46B27A', path: ['jq_xyy', 'jq_dshd', 'ml_dshd'] },
+  { id: 'lk-academic', label: '教务成绩',   color: '#5E86D8', path: ['jq_nqbg', 'jq_tw', 'ml_j1'] },
+  { id: 'lk-card',     label: '学生证补办', color: '#E0953F', path: ['jq_kjxy', 'jq_dshd', 'jq_tw'] },
+  { id: 'lk-award',    label: '奖助学金',   color: '#8A6FD1', path: ['jq_zzzx', 'jq_nqbg', 'jq_gsyh'] },
+  { id: 'lk-repair',   label: '宿舍报修',   color: '#D65A72', path: ['ml_jla', 'ml_dshd', 'jq_zhzl'] },
+  { id: 'lk-sport',    label: '运动联动',   color: '#3FA8B4', path: ['jq_yy', 'jq_tyg', 'jq_ydc', 'ml_tyg', 'ml_ydc', 'ml_tyxy'] }
+];

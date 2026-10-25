@@ -1,7 +1,8 @@
-/* 智行江畔 —— Kimi API 代理（Cloudflare Pages Function，挂载于 /ai）
+/* 智行江畔 —— DeepSeek API 代理（Cloudflare Pages Function，挂载于 /ai）
  * 机密变量（Pages 项目 Settings → Variables and Secrets）：
- *   MOONSHOT_KEY —— Kimi API Key
- *   APP_SECRET   —— 前端请求头 X-App-Key 的校验值 */
+ *   DEEPSEEK_KEY —— DeepSeek API Key（platform.deepseek.com 申请）
+ *   APP_SECRET   —— 前端请求头 X-App-Key 的校验值
+ * DeepSeek 接口为 OpenAI chat/completions 兼容格式，请求体原样透传。 */
 export async function onRequestOptions() {
   return new Response(null, {
     status: 204,
@@ -24,9 +25,9 @@ export async function onRequestPost(context) {
       status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }
-  const up = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+  const up = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.MOONSHOT_KEY },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.DEEPSEEK_KEY },
     body: request.body
   });
   return new Response(up.body, {

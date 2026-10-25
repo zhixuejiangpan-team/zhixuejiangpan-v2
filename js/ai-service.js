@@ -1,5 +1,5 @@
 /* ============================================================
-   智行江畔 V6.6+AI —— AI 服务层（Kimi API）
+   智行江畔 V9.0 —— AI 服务层（DeepSeek API，OpenAI chat/completions 兼容）
    功能：调用代理 / 点位模糊解析 / 敏感词分级 / 医疗内容过滤 /
          频率限制 / 断网检测
    本文件对 Node 环境安全（typeof 守卫），便于单元测试解析函数
@@ -40,7 +40,7 @@
     return text;
   }
 
-  /* ---------- 调用 Kimi（经本地代理） ---------- */
+  /* ---------- 调用 DeepSeek（经本地代理，请求体 OpenAI 兼容原样透传） ---------- */
   /* V6.9：统一 localStorage 前缀 zxsj66_（旧键 aiChatHistory 一次性迁移） */
   var HIST_KEY = 'zxsj66_aichat';
   function loadHistory() {
@@ -68,7 +68,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-App-Key': cfg.APP_KEY || '' },
         signal: ctrl ? ctrl.signal : undefined,
-        body: JSON.stringify({ model: cfg.MODEL || 'kimi-k2.6', messages: messages })
+        body: JSON.stringify({ model: cfg.MODEL || 'deepseek-chat', messages: messages })
       }).then(function (r) {
         clearTimeout(timer);
         if (!r.ok) throw new Error('HTTP ' + r.status);

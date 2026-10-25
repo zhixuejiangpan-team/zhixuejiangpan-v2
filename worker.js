@@ -1,6 +1,6 @@
-/* 智行江畔 —— Kimi API 代理（Cloudflare Worker）
+/* 智行江畔 —— DeepSeek API 代理（Cloudflare Worker）
  * 环境变量（在 Dashboard → Settings → Variables and Secrets 配置）：
- *   MOONSHOT_KEY  —— Kimi API Key（Secret）
+ *   DEEPSEEK_KEY  —— DeepSeek API Key（Secret，platform.deepseek.com 申请）
  *   APP_SECRET    —— 前端请求头 X-App-Key 的校验值（Secret）
  * 严禁把 Key 写进前端代码或本文件。 */
 export default {
@@ -18,9 +18,9 @@ export default {
       return new Response('{}', { status: 404, headers: cors });
     if (!env.APP_SECRET || request.headers.get('X-App-Key') !== env.APP_SECRET)
       return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 403, headers: cors });
-    const up = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+    const up = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.MOONSHOT_KEY },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.DEEPSEEK_KEY },
       body: request.body
     });
     return new Response(up.body, {
