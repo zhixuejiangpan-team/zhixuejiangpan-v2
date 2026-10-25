@@ -22,7 +22,7 @@ window.AI_CONFIG = {
   APP_KEY: 'zhixuejiangpan2026',  // 代理访问校验（与服务端 APP_SECRET 一致）
   MODEL: 'deepseek-chat',         // DeepSeek 通用对话模型；深度推理可换 'deepseek-reasoner'
   ENDPOINT: 'https://api.deepseek.com/chat/completions',  // DeepSeek API（OpenAI 兼容）
-  PROXY_URL: 'https://zhixuejiangpan.pages.dev/ai',   // 线上代理（Cloudflare Pages Function）
+  PROXY_URL: 'https://zhixuejiangpan-v2.pages.dev/ai',   // 线上代理（Cloudflare Pages Function，V2 独立项目）
   MAX_CONTEXT: 5,
   TIMEOUT: 60000,                  // deepseek-chat 常规响应 <30s，60s 兜底（换 reasoner 可调回 120s）
   SYSTEM_PROMPT: '你是"智行江畔"的江财校园生活助手。规则：1.优先基于本地知识库（js/data.js 的 spots/hotQuestions/workflows）回答，准确引用具体点位名和步骤；2.本地知识没有时基于通用知识回答并提示"建议向相关部门确认"；3.回答控制在 200 字内，办事类问题必须给出具体地点和步骤；4.涉及心理/医疗话题时，提供一般性支持信息（如告知校医院位置、心理咨询预约方式），但明确不作医疗诊断，并建议联系专业老师。'
