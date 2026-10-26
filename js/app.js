@@ -145,7 +145,7 @@
     if (window.ShardArt) window.ShardArt.apply(name);   /* 碎片重组：每段一次多边形变形 */
     if (name === 'map') { MapModule.enter(); MapModule.onActive(true); if (window.ZXSJ.Scene) window.ZXSJ.Scene.setMapActive(true); }
     else { MapModule.onActive(false); if (window.ZXSJ.Scene) window.ZXSJ.Scene.setMapActive(false); }
-    if (name === 'ask') GraphModule.ensure();
+    /* V10.1：力导向图已迁入「数据洞察」抽屉，首次打开抽屉时懒加载 */
     if (name === 'twin') { TwinModule.enter(); if (window.ZXSJ.Scene) window.ZXSJ.Scene.setTwinActive(true); }
     else { TwinModule.leave(); if (window.ZXSJ.Scene) window.ZXSJ.Scene.setTwinActive(false); }
   }
@@ -348,6 +348,102 @@
   document.getElementById('settingsClose').addEventListener('click', closeSettings);
   settingsBackdrop.addEventListener('click', closeSettings);
 
+  /* ================= V10.1 数据洞察抽屉（力导向图 + 问卷，从首页分离） ================= */
+  (function initInsight() {
+    var drawer = document.getElementById('insightDrawer');
+    if (!drawer) return;
+    var backdrop = document.getElementById('insightBackdrop');
+    var firstOpen = false;
+    function open() {
+      drawer.hidden = false;
+      requestAnimationFrame(function () { drawer.classList.add('open'); });
+      if (!firstOpen) {
+        firstOpen = true;
+        GraphModule.ensure();
+      }
+      if (window.__surveyRefresh) window.__surveyRefresh();   /* 每次打开重绘图表（容器可见后测量尺寸） */
+    }
+    function close() {
+      drawer.classList.remove('open');
+      setTimeout(function () { drawer.hidden = true; }, 340);
+    }
+    document.querySelectorAll('.snav[data-open="insight"]').forEach(function (b) { b.addEventListener('click', open); });
+    var closeBtn = document.getElementById('insightClose');
+    if (closeBtn) closeBtn.addEventListener('click', close);
+    if (backdrop) backdrop.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && drawer && !drawer.hidden && drawer.classList.contains('open')) close();
+    });
+    window.__insightOpen = open;
+  })();
+
+  /* ================= V10.1 首页交互（对话框 / 8 层视差 / 纸飞机 / 结果浮层） ================= */
+  (function initAskUI() {
+    var dialog = document.getElementById('askDialog');
+    var btn = document.getElementById('askDialogBtn');
+    var barWrap = document.getElementById('searchBarWrap');
+    var input = document.getElementById('searchInput');
+    var results = document.getElementById('askResults');
+    var closeBtn = document.getElementById('askResultsClose');
+    /* 点击对话框 → 展开为输入框 */
+    if (btn && barWrap && input) {
+      btn.addEventListener('click', function () {
+        btn.hidden = true; barWrap.hidden = false; dialog.classList.add('open');
+        setTimeout(function () { input.focus(); }, 60);
+      });
+    }
+    /* 输入时对话框轻微颤抖（马克笔书写感） */
+    if (input && dialog) {
+      var tremTimer = null;
+      input.addEventListener('keydown', function () {
+        dialog.classList.remove('trembling'); void dialog.offsetWidth;
+        dialog.classList.add('trembling');
+        clearTimeout(tremTimer);
+        tremTimer = setTimeout(function () { dialog.classList.remove('trembling'); }, 240);
+      });
+    }
+    /* 结果浮层开关 */
+    if (results && closeBtn) closeBtn.addEventListener('click', function () { results.hidden = true; });
+    window.__askShowResults = function () { if (results) results.hidden = false; };
+    /* 纸飞机：提交的问题飞向屏幕上方 */
+    window.__flyPlane = function () {
+      if (RM) return;
+      var el = dialog || document.body;
+      var rect = el.getBoundingClientRect();
+      var x = rect.left + rect.width / 2, y = rect.top + 14;
+      var plane = document.createElement('span');
+      plane.className = 'ask-plane'; plane.textContent = '✈';
+      plane.style.left = x + 'px'; plane.style.top = y + 'px';
+      plane.style.setProperty('--fx', (window.innerWidth / 2 - x) + 'px');
+      plane.style.setProperty('--fy', (-(y - window.innerHeight * 0.16)) + 'px');
+      document.body.appendChild(plane);
+      requestAnimationFrame(function () { requestAnimationFrame(function () { plane.classList.add('fly'); }); });
+      setTimeout(function () { if (plane.parentNode) plane.parentNode.removeChild(plane); }, 1500);
+      if (window.__sfx) window.__sfx.play('view');
+    };
+    /* 8 层视差：鼠标驱动（前景快、背景慢）+ 建筑 ±2° 摇摆 */
+    var layers = Array.prototype.slice.call(document.querySelectorAll('.ask-parallax .ap-layer'));
+    var tX = 0, tY = 0, cX = 0, cY = 0, rafId = null;
+    var fine = false; try { fine = matchMedia('(hover: hover) and (pointer: fine)').matches; } catch (e) {}
+    function loop() {
+      cX += (tX - cX) * 0.08; cY += (tY - cY) * 0.08;
+      layers.forEach(function (l) {
+        var d = parseFloat(l.getAttribute('data-depth') || '0.3');
+        l.style.transform = 'translate3d(' + (cX * d * 34).toFixed(1) + 'px,' + (cY * d * 26).toFixed(1) + 'px,0)';
+      });
+      var sky = document.querySelector('.ask-parallax .ap-skyline');
+      if (sky) sky.style.rotate = (cX * 2).toFixed(2) + 'deg';   /* ±2° 建筑摇摆 */
+      rafId = requestAnimationFrame(loop);
+    }
+    if (layers.length && fine && !MOBILE && !RM) {
+      window.addEventListener('mousemove', function (e) {
+        tX = (e.clientX / window.innerWidth - 0.5) * 2;
+        tY = (e.clientY / window.innerHeight - 0.5) * 2;
+      }, { passive: true });
+      rafId = requestAnimationFrame(loop);
+    }
+  })();
+
   /* ================= 搜索 × AI（安全链路保留） ================= */
   var searchInput = document.getElementById('searchInput');
   var suggestBox = document.getElementById('suggestBox');
@@ -360,15 +456,24 @@
   function getHist() { return load(LS.hist, []); }
   function pushHist(q) {
     if (q.trim() === '蛟湖') { searchInput.value = ''; suggestBox.hidden = true; if (window.EasterModule) window.EasterModule.open('search'); return; }
-    var h = getHist().filter(function (x) { return x !== q; }); h.unshift(q); h = h.slice(0, 10);
+    var h = getHist().filter(function (x) { return x !== q; }); h.unshift(q); h = h.slice(0, 50);   /* V10.3：容量 10 → 50，键名 zxsj66_hist 不变 */
     save(LS.hist, h); renderHist(); renderMineHist();
   }
+  var histExpanded = false;   /* V10.3：足迹展开态（内存变量，不进 localStorage） */
   function renderHist() {
     var h = getHist();
-    histBox.innerHTML = h.length ? h.map(function (x) { return '<button class="chip hist-chip">' + esc(x) + '</button>'; }).join('') + '<button class="chip hist-clear" id="histClear">清空</button>' : '<span class="empty-tip">暂无搜索历史</span>';
+    var show = histExpanded ? h : h.slice(0, 8);
+    histBox.innerHTML = h.length
+      ? show.map(function (x) { return '<button class="chip hist-chip">' + esc(x) + '</button>'; }).join('')
+      : '<span class="empty-tip">暂无搜索历史</span>';
     histBox.querySelectorAll('.hist-chip').forEach(function (c) { c.addEventListener('click', function () { searchInput.value = c.textContent; runSearch(c.textContent); }); });
-    var clr = document.getElementById('histClear');
-    if (clr) clr.addEventListener('click', function () { save(LS.hist, []); renderHist(); renderMineHist(); });
+    var btn = document.getElementById('histExpand');
+    if (btn) {
+      btn.classList.toggle('no-more', h.length <= 8);
+      btn.innerHTML = histExpanded ? '<span class="arr">⌄</span> 收起' : '<span class="arr">⌄</span> 查看全部记录（共 ' + h.length + ' 条）';
+    }
+    var clr = document.getElementById('histClearDock');
+    if (clr) clr.hidden = !h.length;
   }
   function matchQuestions(q) {
     q = q.trim().toLowerCase(); if (!q) return [];
@@ -392,6 +497,8 @@
     pushHist(q);
     renderResults(matchQuestions(q), q);
     if (window.__renderRelatedCards) window.__renderRelatedCards(q);
+    if (window.__askShowResults) window.__askShowResults();   /* V10.1：结果浮层 */
+    if (window.__flyPlane) window.__flyPlane();               /* V10.1：纸飞机提交 */
   }
   searchInput.addEventListener('input', function () { if (window.__renderSuggest) window.__renderSuggest(); });
   suggestBox.addEventListener('click', function (e) { if (window.__suggestClick) window.__suggestClick(e); });
@@ -414,17 +521,66 @@
     card.querySelector('.result-count').textContent = '🔥 ' + getCount(qid);
     renderHot(); GraphModule.refreshSizes();
   });
+  var hotExpanded = false;   /* V10.3：热点榜展开态（内存变量） */
   function renderHot() {
-    var top = hotQuestions.slice().sort(function (a, b) { return getCount(b.id) - getCount(a.id); }).slice(0, 10);
-    hotBox.innerHTML = top.map(function (item, i) {
-      return '<div class="hot-item" data-qid="' + item.id + '">' +
-        '<span class="hot-rank r' + (i < 3 ? i + 1 : 0) + '">' + (i + 1) + '</span>' +
-        (item.campusScope === 'cross' ? '<span class="cross-tag">🔀</span>' : '') +
-        '<span class="hot-q">' + esc(item.question) + '</span><span class="hot-c">🔥' + getCount(item.id) + '</span></div>';
-    }).join('');
+    var ranked = hotQuestions.slice()
+      .sort(function (a, b) { return getCount(b.id) - getCount(a.id); })
+      .filter(function (item) { return getCount(item.id) > 0; });   /* V10.3：只展示有热度的条目 */
+    var show = hotExpanded ? ranked : ranked.slice(0, 5);
+    hotBox.innerHTML = show.length
+      ? show.map(function (item, i) {
+          return '<div class="hot-item" data-qid="' + item.id + '">' +
+            '<span class="hot-rank r' + (i < 3 ? i + 1 : 0) + '">' + (i + 1) + '</span>' +
+            (item.campusScope === 'cross' ? '<span class="cross-tag" title="涉及跨校区办事">🔀</span>' : '') +
+            '<span class="hot-q">' + esc(item.question) + '</span><span class="hot-c">🔥' + getCount(item.id) + '</span></div>';
+        }).join('')
+      : '<p class="empty-tip">还没有搜索数据，搜一个问题试试。</p>';
+    var btn = document.getElementById('hotExpand');
+    if (btn) {
+      btn.classList.toggle('no-more', ranked.length <= 5);
+      btn.innerHTML = hotExpanded ? '<span class="arr">⌄</span> 收起' : '<span class="arr">⌄</span> 展开完整榜单（共 ' + ranked.length + ' 条）';
+    }
   }
   hotBox.addEventListener('click', function (e) { var it = e.target.closest('.hot-item'); if (!it) return; searchInput.value = questionOf(it.getAttribute('data-qid')); runSearch(searchInput.value); });
   document.addEventListener('votesUpdated', function () { renderHot(); renderMineVotes(); });
+
+  /* ---------- V10.3 底栏 Dock：标签切换 + 展开/收起 + 清空 ---------- */
+  (function initDock() {
+    var dockTabHot = document.getElementById('dockTabHot');
+    var dockTabHist = document.getElementById('dockTabHist');
+    var panelHot = document.getElementById('dockPanelHot');
+    var panelHist = document.getElementById('dockPanelHist');
+    var hotExpandBtn = document.getElementById('hotExpand');
+    var histExpandBtn = document.getElementById('histExpand');
+    var histClearDock = document.getElementById('histClearDock');
+    if (!dockTabHot || !panelHot) return;
+    function dockSwitch(toHot) {
+      dockTabHot.classList.toggle('active', toHot);
+      dockTabHist.classList.toggle('active', !toHot);
+      dockTabHot.setAttribute('aria-selected', toHot);
+      dockTabHist.setAttribute('aria-selected', !toHot);
+      panelHot.hidden = !toHot; panelHist.hidden = toHot;
+      /* 切换标签：两面板都回收起态 */
+      hotExpanded = false; histExpanded = false;
+      panelHot.classList.remove('expanded'); panelHist.classList.remove('expanded');
+      renderHot(); renderHist();
+    }
+    dockTabHot.addEventListener('click', function () { dockSwitch(true); });
+    dockTabHist.addEventListener('click', function () { dockSwitch(false); });
+    if (hotExpandBtn) hotExpandBtn.addEventListener('click', function () {
+      hotExpanded = !hotExpanded;
+      panelHot.classList.toggle('expanded', hotExpanded);
+      renderHot();
+    });
+    if (histExpandBtn) histExpandBtn.addEventListener('click', function () {
+      histExpanded = !histExpanded;
+      panelHist.classList.toggle('expanded', histExpanded);
+      renderHist();
+    });
+    if (histClearDock) histClearDock.addEventListener('click', function () {
+      save(LS.hist, []); renderHist(); renderMineHist();
+    });
+  })();
 
   /* ---------- AI 回答卡片 ---------- */
   var aiCard = document.createElement('div'); aiCard.className = 'card ai-card'; aiCard.id = 'aiCard'; aiCard.hidden = true;
@@ -529,22 +685,46 @@
 
     function renderGraph() {
       var wrap = document.getElementById('graphWrap');
-      W = wrap.clientWidth || 560; H = 460;
+      W = wrap.clientWidth || 560; H = Math.max(360, wrap.clientHeight || 460);
       wrap.innerHTML = '<svg id="graphSvg" width="100%" height="' + H + '"></svg><div id="graphCard" hidden></div>';
       var nodes = selectNodes().map(function (q) { return { id: q.id, item: q }; });
       var links = buildLinks(nodes);
+      /* V10.1：连线按关系类型着色（共享点位哈希 → 四色马克笔），手绘虚线 */
+      var LTYPES = ['#FF2E63', '#08D9D6', '#F9ED69', '#6BCB77'];
+      function linkColor(l) {
+        var s = String(l.source.id) + '|' + String(l.target.id);
+        var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+        return LTYPES[h % LTYPES.length];
+      }
       svg = d3.select('#graphSvg');
       var gRoot = svg.append('g');
       svg.call(d3.zoom().scaleExtent([0.5, 3]).on('zoom', function (ev) { gRoot.attr('transform', ev.transform); }));
-      linkSel = gRoot.append('g').selectAll('line').data(links).enter().append('line').attr('stroke-width', 1);
-      nodeG = gRoot.append('g').selectAll('g').data(nodes).enter().append('g').style('cursor', 'grab').on('click', function (ev, d) { showCard(d.item, ev); });
+      linkSel = gRoot.append('g').selectAll('line').data(links).enter().append('line')
+        .attr('stroke-width', 2)
+        .attr('stroke', linkColor)
+        .attr('opacity', 0.55);
+      nodeG = gRoot.append('g').selectAll('g').data(nodes).enter().append('g')
+        .attr('class', 'g-node')
+        .style('cursor', 'grab')
+        .on('click', function (ev, d) { shatter(d.item, ev); showCard(d.item, ev); });
+      /* 手绘圆圈：墨线外圈 + 马克笔色内圈（马克笔质感） */
+      var MPAL = ['#FF2E63', '#08D9D6', '#F9ED69', '#6BCB77'];
+      nodeG.append('circle').attr('class', 'g-ink')
+        .attr('r', function (d) { return radius(d.item) + 2; })
+        .attr('stroke-width', 2.5)
+        .attr('opacity', function (d) { return opacityOf(d.item); });
       nodeSel = nodeG.append('circle')
         .attr('r', function (d) { return radius(d.item); })
-        .attr('fill', function (d) { return d.item.isSensitive ? cssVar('--ink-2', '#86868B') : cssVar('--accent', '#FF3B5C'); })
-        .attr('stroke', function (d) { return d.item.campusScope === 'cross' ? cssVar('--accent-3', '#FFB000') : cssVar('--bg', '#FBF3E1'); })
-        .attr('stroke-width', function (d) { return d.item.campusScope === 'cross' ? 3 : 1.5; })
+        .attr('fill', function (d) { if (d.item.isSensitive) return '#86868B'; var h = 0, s = d.item.id; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return MPAL[h % MPAL.length]; })
+        .attr('stroke', '#FEFBF6')
+        .attr('stroke-width', 2)
         .attr('opacity', function (d) { return opacityOf(d.item); });
-      nodeG.append('text').text(function (d) { return truncate(d.item.question); }).attr('font-size', 10).attr('dy', function (d) { return radius(d.item) + 12; }).attr('text-anchor', 'middle');
+      /* 跨校区：手绘星标（替代橙色描边） */
+      nodeG.filter(function (d) { return d.item.campusScope === 'cross'; }).append('path')
+        .attr('class', 'g-star')
+        .attr('transform', function (d) { var r = radius(d.item); return 'translate(' + (r * 0.72) + ',' + (-r * 0.78) + ') scale(0.5)'; })
+        .attr('d', 'M0 -10 L2.6 -3 L10 -3 L4.2 1.6 L6.2 9 L0 4.6 L-6.2 9 L-4.2 1.6 L-10 -3 L-2.6 -3 Z');
+      nodeG.append('text').text(function (d) { return truncate(d.item.question); }).attr('font-size', 10).attr('dy', function (d) { return radius(d.item) + 14; }).attr('text-anchor', 'middle');
 
       simulation = d3.forceSimulation(nodes)
         .force('charge', d3.forceManyBody().strength(-170))
@@ -563,13 +743,23 @@
           nodeG.attr('transform', function (d) { return 'translate(' + d.x + ',' + d.y + ')'; });
         });
 
-      /* 拖拽 + 碰撞回弹 */
+      /* 拖拽：节点随速度「拉长」变形，松手弹性回弹（Species in Pieces 弹性） */
       nodeG.call(d3.drag()
         .on('start', function (ev, d) { if (!ev.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-        .on('drag', function (ev, d) { d.fx = ev.x; d.fy = ev.y; })
-        .on('end', function (ev, d) { if (!ev.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }));
+        .on('drag', function (ev, d) {
+          d.fx = ev.x; d.fy = ev.y;
+          var sp = Math.min(0.3, (Math.abs(ev.dx) + Math.abs(ev.dy)) / 70);
+          d._stretch = sp;
+          var s = d3.select(this);
+          s.selectAll('.g-ink').attr('transform', 'scale(' + (1 + sp) + ',' + (1 - sp * 0.55) + ')');
+        })
+        .on('end', function (ev, d) {
+          if (!ev.active) simulation.alphaTarget(0); d.fx = null; d.fy = null;
+          d._stretch = 0;
+          d3.select(this).selectAll('.g-ink').transition().duration(420).ease(d3.easeElastic.period(0.45)).attr('transform', 'scale(1,1)');
+        }));
 
-      /* 鼠标扰动：光标靠近推开节点 */
+      /* 鼠标扰动：光标靠近推开节点（风力模拟） */
       svg.on('mousemove', function (ev) {
         var rect = document.getElementById('graphSvg').getBoundingClientRect();
         var t = d3.zoomTransform(gRoot.node());
@@ -580,6 +770,34 @@
       var frames = 0, t0 = performance.now();
       function fpsProbe() { frames++; if (frames < 90) requestAnimationFrame(fpsProbe); else { var fps = frames / ((performance.now() - t0) / 1000); if (fps < 30 && !degraded) { degraded = true; renderList(); } } }
       requestAnimationFrame(fpsProbe);
+    }
+    /* V10.1：点击节点「碎裂」成多边形碎片飞散，再展开详情卡 */
+    function shatter(item, ev) {
+      if (RM) return;
+      var wrap = document.getElementById('graphWrap');
+      var rect = wrap.getBoundingClientRect();
+      var x = (ev.clientX || rect.left + rect.width / 2) - rect.left;
+      var y = (ev.clientY || rect.top + rect.height / 2) - rect.top;
+      var COLORS = ['#FF2E63', '#08D9D6', '#F9ED69', '#6BCB77'];
+      var CLIPS = [
+        'polygon(50% 0%, 100% 40%, 70% 100%, 20% 80%)',
+        'polygon(0% 30%, 60% 0%, 100% 60%, 30% 100%)',
+        'polygon(30% 0%, 100% 22%, 70% 100%, 0% 74%)',
+        'polygon(0% 0%, 100% 0%, 74% 62%, 22% 100%)'
+      ];
+      for (var i = 0; i < 6; i++) {
+        var s = document.createElement('span');
+        s.className = 'gfx-shard';
+        s.style.left = (x - 12) + 'px'; s.style.top = (y - 12) + 'px';
+        s.style.clipPath = CLIPS[i % CLIPS.length];
+        s.style.background = COLORS[i % COLORS.length];
+        s.style.setProperty('--gdx', ((Math.random() * 120 - 60).toFixed(0)) + 'px');
+        s.style.setProperty('--gdy', ((Math.random() * 110 - 66).toFixed(0)) + 'px');
+        s.style.setProperty('--grot', ((Math.random() * 300 - 150).toFixed(0)) + 'deg');
+        wrap.appendChild(s);
+        requestAnimationFrame(function () { requestAnimationFrame(function () { s.classList.add('pop'); }); });
+        (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 700); })(s);
+      }
     }
     function renderList() {
       var wrap = document.getElementById('graphWrap');
@@ -609,6 +827,8 @@
       refreshSizes: function () {
         if (!inited || degraded || !nodeSel) return;
         nodeSel.transition().duration(300).attr('r', function (d) { return radius(d.item); }).attr('opacity', function (d) { return opacityOf(d.item); });
+        nodeG.selectAll('.g-ink').transition().duration(300).attr('r', function (d) { return radius(d.item) + 2; }).attr('opacity', function (d) { return opacityOf(d.item); });
+        nodeG.selectAll('.g-star').attr('transform', function (d) { var r = radius(d.item); return 'translate(' + (r * 0.72) + ',' + (-r * 0.78) + ') scale(0.5)'; });
       }
     };
   })();
@@ -1476,11 +1696,18 @@
           return '<div class="srs-row"><span>' + esc(op.label) + '</span><i style="width:' + Math.round(op.real / NREAL * 100) + '%"></i><em>' + op.real + '/' + NREAL + '</em></div>';
         }).join('') + '</div>';
       }).join('') + '</div></div>';
-    countUp(document.getElementById('shnTotal'), NTOT, 900);
-    countUp(document.getElementById('shnSim'), NSIM, 1100);
-    countUp(document.getElementById('shnReal'), NREAL, 1300);
+    /* V10.1：大数字计数改为抽屉首次打开时触发（样本量数字滚动） */
+    var counted = false;
+    function runCountUps() {
+      if (counted) return;
+      counted = true;
+      countUp(document.getElementById('shnTotal'), NTOT, 900);
+      countUp(document.getElementById('shnSim'), NSIM, 1100);
+      countUp(document.getElementById('shnReal'), NREAL, 1300);
+    }
 
-    /* 痛点排行榜：按全量 109 排序的动画条形 */
+    /* 痛点排行榜：按全量 109 排序的马克笔条形（笔触纹理 + 四色循环） */
+    var BAR_COLORS = ['#FF2E63', '#08D9D6', '#F9ED69', '#6BCB77', '#FF9F45', '#8A6FD1', '#3FA8B4'];
     function renderHeroChart() {
       var host = document.getElementById('shcBars'); if (!host) return;
       var q = SD.questions[1];
@@ -1491,7 +1718,7 @@
         var w = Math.round(r.v / max * 100);
         return '<div class="shc-row"><span class="shc-rank r' + (i < 3 ? i + 1 : 0) + '">' + (i + 1) + '</span>' +
           '<span class="shc-label">' + esc(r.label) + '</span>' +
-          '<span class="shc-track"><i class="shc-bar" data-w="' + w + '"></i></span>' +
+          '<span class="shc-track"><i class="shc-bar" data-w="' + w + '" style="--bar-c:' + BAR_COLORS[i % BAR_COLORS.length] + '"></i></span>' +
           '<b class="shc-num">' + r.v + '</b></div>';
       }).join('');
       requestAnimationFrame(function () {
@@ -1502,46 +1729,57 @@
     }
 
     var charts = [];
+    var PAL = ['#FF2E63', '#08D9D6', '#F9ED69', '#6BCB77', '#FF9F45', '#8A6FD1', '#3FA8B4', '#E84A8B'];
     function pct(c) { return (c / curN() * 100).toFixed(1) + '%'; }
+    /* V10.1：饼图类改为「Species in Pieces 式多边形面积图」（SVG 楔形 + 手绘抖边 + 图例） */
+    function renderPiePolygon(el, q) {
+      var vals = q.options.map(function (op) { return countOf(op); });
+      var total = vals.reduce(function (a, b) { return a + b; }, 0) || 1;
+      var cx = 110, cy = 100, R = 80;
+      var acc = 0, polys = '';
+      vals.forEach(function (v, i) {
+        var a0 = acc / total * Math.PI * 2 - Math.PI / 2;
+        acc += v;
+        var a1 = acc / total * Math.PI * 2 - Math.PI / 2;
+        var wedge = [cx + ',' + cy];
+        var steps = Math.max(3, Math.ceil((a1 - a0) / 0.16));
+        for (var s = 0; s <= steps; s++) {
+          var a = a0 + (a1 - a0) * s / steps;
+          wedge.push((cx + Math.cos(a) * R).toFixed(1) + ',' + (cy + Math.sin(a) * R).toFixed(1));
+        }
+        polys += '<polygon points="' + wedge.join(' ') + '" fill="' + PAL[i % PAL.length] + '" stroke="#2B2B2B" stroke-width="2" stroke-linejoin="round" opacity="0.92"/>';
+      });
+      var legend = q.options.map(function (op, i) {
+        var c = countOf(op);
+        return '<div class="pp-leg"><i style="background:' + PAL[i % PAL.length] + '"></i><span>' + esc(op.label) + '</span><b>' + c + '/' + curN() + ' · ' + pct(c) + '</b></div>';
+      }).join('');
+      el.classList.add('chart-poly');   /* 多边形图容器自适应高度 */
+      el.innerHTML = '<svg viewBox="0 0 220 200" class="pie-poly"><circle cx="110" cy="100" r="' + Math.round(R * 0.3) + '" fill="var(--bg, #FEFBF6)" stroke="#2B2B2B" stroke-width="2"/>' + polys + '</svg><div class="pp-legend">' + legend + '</div>';
+    }
     function renderCharts() {
       if (typeof echarts === 'undefined') return;
-      var ACC = cssVar('--accent', '#FF3B5C'), ACC2 = cssVar('--accent-2', '#2E6BFF'), TXT = cssVar('--ink', '#26221B');
+      var TXT = cssVar('--ink', '#26221B');
       charts.forEach(function (c) { c.dispose(); }); charts = [];
-      var PAL = [ACC, ACC2, cssVar('--accent-3', '#FFB000'), cssVar('--accent-4', '#12A36B'), cssVar('--twin-yellow', '#FFB000'), cssVar('--twin-green', '#12A36B'), '#8A6FD1', '#3FA8B4'];
       SD.questions.forEach(function (q) {
         var el = document.getElementById('chart-' + q.id); if (!el) return;
         var topIdx = 0; q.options.forEach(function (op, i) { if (countOf(op) > countOf(q.options[topIdx])) topIdx = i; });
         var fmt = function (i) { var c = countOf(q.options[i]); return q.options[i].label + '：' + c + '/' + curN() + ' · ' + pct(c); };
+        if (q.chart === 'pie') { renderPiePolygon(el, q); return; }
         var chart = echarts.init(el);
-        var data = q.options.map(function (op, i) { return { name: op.label, value: countOf(op), itemStyle: { color: PAL[i % PAL.length], borderRadius: [0, 8, 8, 0] } }; });
-        if (q.chart === 'pie') {
-          chart.setOption({
-            animationDuration: 800, animationEasing: 'cubicOut',
-            tooltip: { trigger: 'item', formatter: function (p) { return fmt(p.dataIndex); } },
-            legend: { bottom: 0, textStyle: { fontSize: 10, color: TXT }, itemWidth: 10, itemHeight: 10 },
-            series: [{
-              type: 'pie', radius: ['34%', '58%'], center: ['50%', '44%'],
-              itemStyle: { borderColor: cssVar('--bg', '#FBF3E1'), borderWidth: 2 },
-              label: { fontSize: 9, color: TXT, formatter: function (p) { return p.name + '\n' + pct(countOf(q.options[p.dataIndex])); } },
-              emphasis: { label: { fontSize: 11, fontWeight: 'bold' }, itemStyle: { shadowBlur: 12, shadowColor: 'rgba(0,0,0,0.2)' } },
-              data: data
-            }]
-          });
-        } else {
-          chart.setOption({
-            animationDuration: 800, animationEasing: 'cubicOut',
-            tooltip: { trigger: 'item', formatter: function (p) { return fmt(p.dataIndex); } },
-            grid: { left: 8, right: 92, top: 8, bottom: 8, containLabel: true },
-            xAxis: { type: 'value', minInterval: 1, axisLabel: { color: TXT }, splitLine: { lineStyle: { color: cssVar('--twin-grid', 'rgba(0,0,0,0.1)') } } },
-            yAxis: { type: 'category', inverse: true, data: q.options.map(function (o) { return o.label; }), axisLabel: { fontSize: 10, color: TXT } },
-            series: [{
-              type: 'bar', barWidth: 14,
-              label: { show: true, position: 'right', fontSize: 10, color: TXT, formatter: function (p) { return p.value + '/' + curN(); } },
-              emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.25)' } },
-              data: data
-            }]
-          });
-        }
+        var data = q.options.map(function (op, i) { return { name: op.label, value: countOf(op), itemStyle: { color: PAL[i % PAL.length], borderRadius: [0, 8, 8, 0], borderColor: '#2B2B2B', borderWidth: 2 } }; });
+        chart.setOption({
+          animationDuration: 800, animationEasing: 'cubicOut',
+          tooltip: { trigger: 'item', formatter: function (p) { return fmt(p.dataIndex); } },
+          grid: { left: 8, right: 92, top: 8, bottom: 8, containLabel: true },
+          xAxis: { type: 'value', minInterval: 1, axisLabel: { color: TXT }, splitLine: { lineStyle: { color: cssVar('--twin-grid', 'rgba(0,0,0,0.1)') } } },
+          yAxis: { type: 'category', inverse: true, data: q.options.map(function (o) { return o.label; }), axisLabel: { fontSize: 10, color: TXT } },
+          series: [{
+            type: 'bar', barWidth: 15,
+            label: { show: true, position: 'right', fontSize: 10, color: TXT, formatter: function (p) { return p.value + '/' + curN(); } },
+            emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.25)' } },
+            data: data
+          }]
+        });
         charts.push(chart);
       });
     }
@@ -1555,8 +1793,16 @@
     document.getElementById('surveyHeader').addEventListener('click', function () { var open = panel.classList.toggle('open'); document.getElementById('surveyArrow').textContent = open ? '▾' : '▸'; if (open) setTimeout(renderCharts, 60); });
     document.getElementById('srsHead').addEventListener('click', function () { var b = document.getElementById('srsBody'); b.hidden = !b.hidden; document.getElementById('srsArrow').textContent = b.hidden ? '▸' : '▾'; });
     renderHeroChart();
-    if (panel.classList.contains('open')) setTimeout(renderCharts, 80);
     document.getElementById('soHeader').addEventListener('click', function () { var b = document.getElementById('soBody'); b.hidden = !b.hidden; document.getElementById('soArrow').textContent = b.hidden ? '▸' : '▾'; });
+    /* V10.1：问卷渲染与计数改为「数据洞察」抽屉打开时触发（容器可见后再测量） */
+    window.__surveyRefresh = function () {
+      runCountUps();
+      renderHeroChart();
+      if (typeof echarts !== 'undefined') renderCharts();
+      else SD.questions.forEach(function (q) {
+        var el = document.getElementById('chart-' + q.id); if (el) el.innerHTML = '<p class="empty-tip">图表库加载失败（需联网）</p>';
+      });
+    };
   })();
 
   /* ================= 指南 ================= */
@@ -1801,6 +2047,13 @@
   if (btnMap) btnMap.addEventListener('click', function () { if (window.ZXSJ.Gestures) window.ZXSJ.Gestures.toggle(); syncGestureButtons(); toast(window.ZXSJ.Gestures.isEnabled() ? '手势控制已开启（捏合缩放 / 移动手指平移）' : '手势控制已关闭'); });
   gestureToggleInit(); syncGestureButtons();
 
+  /* V10.2 设置：重看开屏引导（清除完成标记后刷新） */
+  var replayIntroBtn = document.getElementById('replayIntroBtn');
+  if (replayIntroBtn) replayIntroBtn.addEventListener('click', function () {
+    try { localStorage.removeItem('zxsj66_intro_done'); } catch (e) {}
+    location.reload();
+  });
+
   /* 设置抽屉动态内容渲染 */
   function renderSettingsDynamic() { renderMineVotes(); renderMineHist(); renderKbGrowth(); }
 
@@ -1815,7 +2068,7 @@
   })();
 
   /* ================= 启动 ================= */
-  renderHist(); renderHot(); renderMineVotes(); renderMineHist(); GraphModule.ensure();
+  renderHist(); renderHot(); renderMineVotes(); renderMineHist();   /* V10.1：图谱/问卷改为洞察抽屉懒加载 */
   (function greet() {
     var el = document.getElementById('searchGreet'); if (!el) return;
     var now = new Date(), dateStr = now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate();

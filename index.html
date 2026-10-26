@@ -28,7 +28,12 @@
   <!-- Three.js r147 UMD 本地内置（file:// 直开可用、零 CDN 依赖，仅 OrbitControls 一个附加控件） -->
   <script src="js/vendor/three.min.js?v=90"></script>
   <script src="js/vendor/OrbitControls.js?v=90"></script>
-  <link rel="stylesheet" href="css/style.css?v=90">
+  <!-- V10.1 标题字体：站酷快乐体（CDN 失败时回退系统圆体/楷体，仍保持手绘感） -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=101">
+  <!-- V10.2 开屏引导叙事系统（四段：迷茫→探索→掌控→成长，独立可插拔模块） -->
+  <link rel="stylesheet" href="css/intro.css?v=102">
 </head>
 <body>
 
@@ -70,6 +75,7 @@
     <div class="sidebar-brand" title="智行江畔">智</div>
     <div class="sidebar-rail" id="sidebarRail">
       <button class="snav" data-nav="ask" title="询问"><span class="snav-ico">💬</span><span class="snav-label">询问</span></button>
+      <button class="snav" data-open="insight" title="数据洞察"><span class="snav-ico">📊</span><span class="snav-label">洞察</span></button>
       <button class="snav" data-nav="map" title="地图"><span class="snav-ico">🗺️</span><span class="snav-label">地图</span></button>
       <button class="snav" data-nav="twin" title="孪生"><span class="snav-ico">🛰️</span><span class="snav-label">孪生</span></button>
       <button class="snav" data-nav="guide" title="指南"><span class="snav-ico">📖</span><span class="snav-label">指南</span></button>
@@ -82,53 +88,152 @@
   <!-- 右侧圆点导航（段落指示） -->
   <div class="dotnav" id="dotNav" aria-hidden="true"></div>
 
-  <!-- 滚动叙事四段 -->
-  <main class="snap" id="snap">
-    <!-- ============ 段一：询问 ============ -->
-    <section id="sec-ask" class="sec sec--ask" data-sec="ask">
-      <div class="sec-inner">
-        <div class="ask-hero">
-          <p class="search-greet" id="searchGreet"></p>
-          <h1 class="ask-title" data-doodle>智行江畔</h1>
-          <p class="search-sub">江财校园生活智能助手 · 搜问题、看路径、办事情</p>
-          <div class="search-bar">
-            <span class="search-ico">🔍</span>
-            <input type="text" id="searchInput" placeholder="输入你的问题，如：补办学生证 / 医保报销 / 食堂" autocomplete="off">
-            <button class="btn btn-primary" id="searchBtn">搜索</button>
-          </div>
-          <div id="suggestBox" class="suggest-box" hidden></div>
-          <div class="ai-context-bar" id="aiContextBar" hidden>
-            <span>💬 继续追问上次的对话</span>
-            <button class="ai-context-go" id="aiContextGo">继续</button>
-            <button class="ai-context-clear" id="aiContextClear">清除对话历史</button>
-          </div>
+  <!-- ============ 数据洞察抽屉（V10.1：力导向图 + 问卷 从首页分离为全屏抽屉） ============ -->
+  <div class="insight-drawer" id="insightDrawer" hidden>
+    <div class="insight-backdrop" id="insightBackdrop"></div>
+    <div class="insight-panel">
+      <div class="insight-topbar">
+        <h2 data-doodle>📊 数据洞察</h2>
+        <button class="card-x" id="insightClose" title="关闭">✕</button>
+      </div>
+      <div class="insight-body">
+        <div class="insight-section">
+          <h3>🕸 高频问题力导向图谱</h3>
+          <p class="graph-tip">节点大小=热度 · 星标=跨校区 · 可拖拽（拉长回弹）· 鼠标靠近会吹开 · 点击节点碎裂展开</p>
+          <div id="graphWrap" class="graph-wrap"></div>
         </div>
-
-        <div class="ask-scroll" id="askScroll">
-          <div id="resultList" class="result-list"></div>
-
-          <div class="card block-card reveal">
-            <h3>🔥 热点问题 Top10</h3>
-            <div id="hotList"></div>
-          </div>
-
-          <div class="card block-card reveal">
-            <h3>🕸 高频问题力导向图谱</h3>
-            <p class="graph-tip">节点大小=热度，橙色描边=跨校区；可拖拽节点，鼠标靠近会扰动</p>
-            <div id="graphWrap" class="graph-wrap"></div>
-          </div>
-
-          <div class="card block-card reveal">
-            <h3>🕘 搜索历史</h3>
-            <div id="historyChips" class="chip-row"></div>
-          </div>
-
-          <div class="card survey-panel reveal open" id="surveyPanel">
+        <div class="insight-section">
+          <div class="card survey-panel open" id="surveyPanel">
             <div class="survey-header" id="surveyHeader">
               <span>📊 需求调研验证（真实 34 / 全量 109）</span>
               <span class="survey-arrow" id="surveyArrow">▾</span>
             </div>
             <div class="survey-body" id="surveyBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 滚动叙事四段 -->
+  <main class="snap" id="snap">
+    <!-- ============ 段一：询问（V10.1 首屏：8 层视差 + 手绘对话框 + 底部贴纸条） ============ -->
+    <section id="sec-ask" class="sec sec--ask" data-sec="ask">
+      <!-- 8 层视差涂鸦背景：手绘校园建筑 + 文具 + 纸屑（鼠标驱动，前景快背景慢） -->
+      <div class="ask-parallax" id="askParallax" aria-hidden="true">
+        <div class="ap-layer ap-skyline" data-depth="0.10">
+          <svg viewBox="0 0 1200 420" preserveAspectRatio="xMidYMax slice">
+            <g fill="none" stroke="#2B2B2B" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.5">
+              <!-- 麦庐教学楼 -->
+              <path d="M120 420 V300 H180 V420"/><path d="M126 300 L150 260 L174 300"/><path d="M138 268 V300"/>
+              <path d="M160 420 V280 H250 V420"/><path d="M164 280 L205 232 L246 280"/><rect x="180" y="306" width="14" height="18" fill="#FF2E63" stroke="none"/>
+              <rect x="204" y="306" width="14" height="18" fill="#08D9D6" stroke="none"/>
+              <rect x="228" y="306" width="14" height="18" fill="#F9ED69" stroke="none"/>
+              <!-- 图书馆 -->
+              <path d="M560 420 V270 H700 V420"/><path d="M566 270 L630 232 L694 270"/><path d="M630 232 V200"/><path d="M610 200 Q630 186 650 200"/>
+              <rect x="596" y="296" width="10" height="26" fill="#6BCB77" stroke="none"/><rect x="616" y="296" width="10" height="26" fill="#FF2E63" stroke="none"/>
+              <rect x="636" y="296" width="10" height="26" fill="#08D9D6" stroke="none"/><rect x="656" y="296" width="10" height="26" fill="#F9ED69" stroke="none"/>
+              <!-- 食堂（大屋顶） -->
+              <path d="M920 420 V310 H1140 V420"/><path d="M906 310 L1030 258 L1154 310"/>
+              <path d="M940 420 V350 Q1030 330 1120 350 V420"/><circle cx="1030" cy="380" r="9" fill="#FF2E63" stroke="#2B2B2B"/>
+              <path d="M1030 380 V340" stroke-dasharray="3 6"/><circle cx="1030" cy="332" r="5" fill="#F9ED69" stroke="#2B2B2B"/>
+              <!-- 树 -->
+              <path d="M60 420 V380 M60 396 Q46 384 50 372 M60 388 Q74 378 70 366"/><circle cx="60" cy="362" r="14" fill="#6BCB77" opacity="0.55"/>
+              <path d="M520 420 V392 M520 404 Q508 394 512 384"/><circle cx="520" cy="376" r="11" fill="#FF2E63" opacity="0.45"/>
+              <!-- 地线 -->
+              <path d="M0 420 H1200" stroke-width="6"/>
+            </g>
+          </svg>
+        </div>
+        <div class="ap-layer ap-clouds" data-depth="0.22">
+          <svg viewBox="0 0 1200 200" preserveAspectRatio="none">
+            <path d="M120 60 q30 -26 62 0 q14 -22 40 -16 q28 6 24 34 q34 4 34 26 q0 16 -20 18 H96 q-26 0 -22 -28 q-6 -22 26 -20 Z" fill="#fff" stroke="#2B2B2B" stroke-width="3" opacity="0.8"/>
+            <path d="M860 120 q24 -20 50 0 q12 -16 32 -10 q22 4 18 26 q28 2 28 20 q0 12 -16 14 H854 q-20 0 -16 -22 q-6 -18 22 -16 Z" fill="#fff" stroke="#2B2B2B" stroke-width="3" opacity="0.6"/>
+          </svg>
+        </div>
+        <div class="ap-layer ap-trees" data-depth="0.30">
+          <span class="ap-tree" style="left:8%;bottom:14%">🌳</span>
+          <span class="ap-tree" style="left:86%;bottom:20%">🌲</span>
+          <span class="ap-tree" style="left:70%;bottom:8%">🌳</span>
+        </div>
+        <div class="ap-layer ap-grass" data-depth="0.38">
+          <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
+            <path d="M0 40 q30 -26 60 0 q30 -22 60 0 q30 -26 60 0 q30 -20 60 0 q30 -26 60 0 q30 -22 60 0 q30 -26 60 0 q30 -20 60 0 q30 -26 60 0 q30 -22 60 0 q30 -26 60 0 q30 -20 60 0 q30 -26 60 0 q30 -22 60 0 q30 -26 60 0 q30 -20 60 0 q30 -26 60 0 q30 -22 60 0 q30 -26 60 0 q30 -20 60 0 q30 -26 60 0 q30 -22 60 0 q30 -26 60 0 q30 -20 60 0" fill="none" stroke="#6BCB77" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+            <path d="M40 70 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0 q30 -20 60 0 q30 -16 60 0" fill="none" stroke="#FF2E63" stroke-width="3" opacity="0.55"/>
+          </svg>
+        </div>
+        <div class="ap-layer ap-tools" data-depth="0.48">
+          <span style="left:6%;top:24%">✏️</span>
+          <span style="left:88%;top:40%">📐</span>
+          <span style="left:16%;top:70%">✂️</span>
+          <span style="left:78%;top:72%">📎</span>
+        </div>
+        <div class="ap-layer ap-qmarks" data-depth="0.58">
+          <span class="ap-q" style="left:14%;top:18%">?</span>
+          <span class="ap-q q2" style="left:82%;top:30%">?</span>
+          <span class="ap-q q3" style="left:26%;top:62%">?</span>
+          <span class="ap-q" style="left:64%;top:10%;font-size:5vmin">?</span>
+        </div>
+        <div class="ap-layer ap-bubbles" data-depth="0.68">
+          <span class="ap-bubble" style="left:8%;top:32%">食堂在哪？</span>
+          <span class="ap-bubble b2" style="left:72%;top:20%">几点下课？</span>
+          <span class="ap-bubble b3" style="left:16%;top:66%">快递怎么取？</span>
+        </div>
+        <div class="ap-layer ap-scraps" data-depth="0.78">
+          <span class="ap-scrap" style="left:4%;top:46%"></span>
+          <span class="ap-scrap s2" style="left:88%;top:56%"></span>
+          <span class="ap-star" style="left:58%;top:6%">✦</span>
+          <span class="ap-star" style="left:34%;top:72%;color:#08D9D6">✦</span>
+        </div>
+      </div>
+
+      <div class="sec-inner">
+        <div class="ask-hero">
+          <p class="search-greet" id="searchGreet"></p>
+          <h1 class="ask-title" data-doodle>智行江畔</h1>
+          <p class="search-sub">江财校园生活智能助手 · 搜问题、看路径、办事情</p>
+
+          <!-- 手绘对话框：点击展开为搜索框 -->
+          <div class="ask-dialog" id="askDialog">
+            <button type="button" class="ask-dialog-btn" id="askDialogBtn"><span>✏️ 今天想了解什么？</span><small>点击开始提问</small></button>
+            <div class="search-bar" id="searchBarWrap" hidden>
+              <span class="search-ico">🔍</span>
+              <input type="text" id="searchInput" placeholder="输入你的问题，如：补办学生证 / 医保报销 / 食堂" autocomplete="off">
+              <button class="btn btn-primary" id="searchBtn">搜索</button>
+            </div>
+            <div id="suggestBox" class="suggest-box" hidden></div>
+          </div>
+          <div class="ai-context-bar" id="aiContextBar" hidden>
+            <span>💬 继续追问上次的对话</span>
+            <button class="ai-context-go" id="aiContextGo">继续</button>
+            <button class="ai-context-clear" id="aiContextClear">清除对话历史</button>
+          </div>
+
+          <!-- 搜索结果浮层（提交后展开，含 AI 回答） -->
+          <div class="ask-results" id="askResults" hidden>
+            <div class="ask-results-head"><b>🔍 搜索结果</b><button class="ask-results-close" id="askResultsClose" title="收起">✕</button></div>
+            <div id="resultList" class="result-list"></div>
+          </div>
+        </div>
+
+        <!-- 底部 Dock：热点榜 + 我的足迹（V10.3 重设计：合并单卡、标签切换、默认收起） -->
+        <div class="ask-bottom">
+          <div class="card dock-card" id="dock">
+            <div class="dock-tabs" role="tablist">
+              <button class="dock-tab active" id="dockTabHot" role="tab" aria-selected="true">🔥 热点榜</button>
+              <button class="dock-tab" id="dockTabHist" role="tab" aria-selected="false">🕘 我的足迹</button>
+              <button class="dock-clear" id="histClearDock" hidden>清空</button>
+            </div>
+            <!-- 热点面板：id 保持 hotList 不变 -->
+            <div class="dock-panel" id="dockPanelHot">
+              <div id="hotList" class="dock-list"></div>
+              <button class="dock-expand" id="hotExpand">⌄ 展开完整榜单</button>
+            </div>
+            <!-- 足迹面板：id 保持 historyChips 不变 -->
+            <div class="dock-panel" id="dockPanelHist" hidden>
+              <div id="historyChips" class="chip-row dock-list"></div>
+              <button class="dock-expand" id="histExpand">⌄ 查看全部记录</button>
+            </div>
           </div>
         </div>
       </div>
@@ -238,6 +343,11 @@
         <label class="data-sound"><input type="checkbox" id="gestureToggle"> 开启（孪生 / 地图手势导航，需摄像头）</label>
         <p class="data-note">仅桌面端可选，默认关闭；开启后授权摄像头，捏合=缩放、移动手指=旋转/平移。</p>
       </div>
+      <div class="card settings-card">
+        <h4>🎬 开屏引导</h4>
+        <p class="data-note">首次打开时播放「迷茫 → 探索 → 掌控 → 成长」四段引导叙事，完成后不再显示。</p>
+        <button class="btn btn-ghost data-btn" id="replayIntroBtn">重看引导</button>
+      </div>
       <div class="card block-card">
         <h3>👍 我的投票记录</h3>
         <div id="mineVotes"></div>
@@ -299,8 +409,10 @@
   <script src="js/gestures.js?v=90"></script>
   <!-- 演示天气场景引擎：雨夜/雪天粒子 + 主地图粒子层 + 闪电/积雪（单一 RAF） -->
   <script src="js/scene-fx.js?v=90"></script>
-  <script src="js/app.js?v=90"></script>
+  <script src="js/app.js?v=101"></script>
   <!-- 3D 建模查看器（THREE 未加载时 window.Twin3D 不定义，孪生 3D 按钮保持置灰） -->
   <script src="js/twin3d.js?v=90"></script>
+  <!-- V10.2 开屏引导叙事（纯 CSS+JS；zxsj66_intro_done 已看过则直接进入首页） -->
+  <script src="js/intro.js?v=102"></script>
 </body>
 </html>
